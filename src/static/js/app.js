@@ -118,8 +118,8 @@ $(function() {
 
 
         amazon_bounds: new google.maps.LatLngBounds(
-            new google.maps.LatLng(-18.47960905583197, -74.0478515625),
-            new google.maps.LatLng(5.462895560209557, -43.43994140625)
+            new google.maps.LatLng(-14.092396, 92.949865),
+            new google.maps.LatLng(10.627074, 142.578940)
         ),
 
         initialize:function() {

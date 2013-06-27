@@ -6,8 +6,8 @@ function GridOverlay(map) {
     this.cell = { coord: {x: 0, y: 0} };
     this.projector = new Projector(this.map);
     this.bounds = new google.maps.LatLngBounds(
-        new google.maps.LatLng(-18.47960905583197, -74.0478515625),
-        new google.maps.LatLng(5.462895560209557, -43.43994140625)
+        new google.maps.LatLng(-14.092396, 92.949865),
+        new google.maps.LatLng(10.627074, 142.578940)
     );
 
     var that = this;
@@ -21,7 +21,7 @@ function GridOverlay(map) {
     google.maps.event.addListener(App.map, 'center_changed', function() {
         var grid = $("#grid");
         var p = that.projector.transformCoordinates(
-            new google.maps.LatLng(5.462895560209557, -74.0478515625)
+            new google.maps.LatLng(-1.742134,117.033132)
         )
         grid.offset({top: p.y, left: p.x});
     });
@@ -101,7 +101,7 @@ GridOverlay.prototype.focus_on = function(cell) {
 GridOverlay.prototype.set_visible_zone = function() {
     // calculate outer and inner polygon
     var X = 179.5;
-    var Y = 85;
+    var Y = 81;
     var sw = this.bounds.getSouthWest();
     var ne = this.bounds.getNorthEast();
     var paths = [[

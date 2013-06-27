@@ -41,6 +41,9 @@ else:
     elif app_id == 'sad-ee':
         FT_TABLE = 'SAD EE Polygons'
         FT_TABLE_ID = '2949980'
+    elif app_id == 'reddplus-mrv':
+        FT_TABLE = 'areas_training'
+        FT_TABLE_ID = '1898803'
 
 # Initialize the EE API.
 EE_TILE_SERVER = EE_API_URL + '/map/'

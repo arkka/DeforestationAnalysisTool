@@ -1,5 +1,5 @@
-application: sad-ee
-version: v01 
+application: reddplus-mrv
+version: v2 
 runtime: python27
 api_version: 1
 threadsafe: no

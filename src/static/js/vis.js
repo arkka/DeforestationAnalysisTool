@@ -173,7 +173,7 @@ var Vizzualization = Backbone.View.extend({
         var self = this;
         // create map
         this.map = new MapView({el: this.$("#main_map")});
-        this.map.map.setCenter(new google.maps.LatLng(-6.348056476859352, -57.88696289062));
+        this.map.map.setCenter(new google.maps.LatLng(-1.742134,117.033132));
         this.map.map.setOptions({disableDoubleClickZoom: false});
 
 

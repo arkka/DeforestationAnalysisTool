@@ -52,7 +52,7 @@ MODIS_TRANSFORM = [
 ]
 
 # The ID of the Fusion Table containing the selected MODIS days for each month.
-MODIS_INCLUSIONS_TABLE = 'ft:1zqKClXoaHjUovWSydYDfOvwsrLVw-aNU4rh3wLc'
+MODIS_INCLUSIONS_TABLE = 'ft:1zYEa-EhDoIWxPKnkArSnkBSXCv86MprM_TZTa2Y'
 # The ID of the Fusion Table containing kriging parameters.
 KRIGING_PARAMS_TABLE = 'ft:17Qn-29xy2JwFFeBam5YL_EjsvWo40zxkkOEq1Eo'
 

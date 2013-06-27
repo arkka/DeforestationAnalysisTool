@@ -4,10 +4,10 @@
 var Mapper = Backbone.Model.extend({
 
     defaults: {
-        'swlat':-18.47960905583197,
-        'swlon': -74.0478515625,
-        'nelat': 5.462895560209557,
-        'nelon': -43.43994140625
+       'swlat': -14.092396,
+       'swlon': 92.949865,
+       'nelat': 10.627074,
+       'nelon': 142.578940
     },
 
     initialize: function() {

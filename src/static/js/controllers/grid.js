@@ -192,10 +192,10 @@ var Grid = Backbone.View.extend({
         var sw = bounds.getSouthWest();
         var ne = bounds.getNorthEast();
         var paths = [[
-            new google.maps.LatLng(-X, -Y),
-                new google.maps.LatLng(-X, Y),
-                new google.maps.LatLng(X, Y),
-                new google.maps.LatLng(X, -Y)
+            new google.maps.LatLng(-90, 60),
+            new google.maps.LatLng(-90, -160),
+            new google.maps.LatLng(90, -160),
+            new google.maps.LatLng(90, 60)
         ], [
             sw,
             new google.maps.LatLng(ne.lat(), sw.lng()),
@@ -217,9 +217,9 @@ var Grid = Backbone.View.extend({
 // controls grid and map changes
 var GridStack = Backbone.View.extend({
     zoom_mapping: {
-        0: 5,
-        1: 8,
-        2: 12
+        0: 4,
+        1: 7,
+        2: 11
     },
 
     WORKING_ZOOM: 2,
