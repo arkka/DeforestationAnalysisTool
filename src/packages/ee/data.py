@@ -3,15 +3,16 @@
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
-
-import json
-import urllib
-
-import httplib2
+# pylint: disable=g-bad-name
 
 import ee_exception
+import json
+import httplib2
+import urllib
 
+
+# OAuth2 credentials object.  This may be set by ee.Initialize().
+_credentials = None
 
 # The base URL for all data calls.  This is set by ee.initialize().
 _api_base_url = None
@@ -19,23 +20,69 @@ _api_base_url = None
 # The base URL for map tiles.  This is set by ee.initialize().
 _tile_base_url = None
 
-# The default deadline.
-DEFAULT_DEADLINE = 30
+# Whether the module has been initialized.
+_initialized = False
 
-# OAuth2 credentials object.  This may be set by ee.Initialize().
-CREDENTIALS = None
+# Sets the number of milliseconds to wait for a request before considering
+# it timed out. 0 means no limit.
+_deadline_ms = 0
+
+# The default base URL for API calls.
+DEFAULT_API_BASE_URL = 'https://earthengine.googleapis.com/api'
+
+# The default base URL for media/tile calls.
+DEFAULT_TILE_BASE_URL = 'https://earthengine.googleapis.com/'
 
 
-def setBaseUrls(api_base_url, tile_base_url):
-  """Sets the base URLs for API calls and tiles.
+def initialize(credentials=None, api_base_url=None, tile_base_url=None):
+  """Initializes the data module, setting credentials and base URLs.
+
+  If any of the arguments are unspecified, they will keep their old values;
+  the defaults if initialize() has never been called before.
 
   Args:
-    api_base_url: The (proxied) EarthEngine REST API endpoint.
-    tile_base_url: The (unproxied) EarthEngine REST tile endpoint.
+    credentials: The OAuth2 credentials.
+    api_base_url: The EarthEngine REST API endpoint.
+    tile_base_url: The EarthEngine REST tile endpoint.
   """
-  global _api_base_url, _tile_base_url
-  _api_base_url = api_base_url
-  _tile_base_url = tile_base_url
+  global _api_base_url, _tile_base_url, _credentials, _initialized
+
+  # If already initialized, only replace the explicitly specified parts.
+
+  if credentials is not None:
+    _credentials = credentials
+
+  if api_base_url is not None:
+    _api_base_url = api_base_url
+  elif not _initialized:
+    _api_base_url = DEFAULT_API_BASE_URL
+
+  if tile_base_url is not None:
+    _tile_base_url = tile_base_url
+  elif not _initialized:
+    _tile_base_url = DEFAULT_TILE_BASE_URL
+
+  _initialized = True
+
+
+def reset():
+  """Resets the data module, clearing credentials and custom base URLs."""
+  global _api_base_url, _tile_base_url, _credentials, _initialized
+  _credentials = None
+  _api_base_url = None
+  _tile_base_url = None
+  _initialized = False
+
+
+def setDeadline(milliseconds):
+  """Sets the timeout length for API requests.
+
+  Args:
+    milliseconds: The number of milliseconds to wait for a request
+        before considering it timed out. 0 means no limit.
+  """
+  global _deadline_ms
+  _deadline_ms = milliseconds
 
 
 def getInfo(asset_id):
@@ -50,16 +97,21 @@ def getInfo(asset_id):
   return send_('/info', {'id': asset_id})
 
 
-def getList(asset_id):
+def getList(params):
   """Get a list of contents for a collection asset.
 
   Args:
-    asset_id: The collection to be examined.
+    params: An object containing request parameters with the
+        following possible values:
+            id (string) The asset id of the collection to list.
+            starttime (number) Start time, in msec since the epoch.
+            endtime (number) End time, in msec since the epoch.
+            fields (comma-separated strings) Field names to return.
 
   Returns:
     The list call results.
   """
-  return send_('/list', {'asset_id': asset_id})
+  return send_('/list', params)
 
 
 def getMapId(params):
@@ -84,7 +136,8 @@ def getMapId(params):
           factor (or one per band)
       palette - (comma-separated strings) List of CSS-style color
           strings (single-band previews only).
-      format (string) Either 'jpg' or 'png'.
+      format (string) Either 'jpg' (does not support transparency) or
+          'png' (supports transparency).
 
   Returns:
     A dictionary containing "mapid" and "token" strings, which can
@@ -133,20 +186,18 @@ def getThumbnail(params):
   """Get a Thumbnail for a given asset.
 
   Args:
-    params: Parameters identical to those for the vizOptions for getMapId
-        with the following additions:
-      width - (number) Width of the thumbnail to render, in pixels.
-      height - (number) Height of the thumbnail to render, in pixels.
-      region - (E,S,W,N or GeoJSON) Geospatial region of the image
-          to render (or all).
-      pixel_bb - (X,Y,WIDTH,HEIGHT) Exact pixel region of the image
-          to render (or all).
-      format - (string) Either 'png' (default) or 'jpg'.
+    params: Parameters identical to getMapId, plus:
+        size - (a number or pair of numbers in format WIDTHxHEIGHT) Maximum
+          dimensions of the thumbnail to render, in pixels. If only one number
+          is passed, it is used as the maximum, and the other dimension is
+          computed by proportional scaling.
+        region - (E,S,W,N or GeoJSON) Geospatial region of the image
+          to render. By default, the whole image.
+        format - (string) Either 'png' (default) or 'jpg'.
 
   Returns:
     A thumbnail image as raw PNG data.
   """
-  params['json_format'] = 'v2'
   return send_('/thumb', params, opt_method='GET', opt_raw=True)
 
 
@@ -154,15 +205,14 @@ def getThumbId(params):
   """Get a Thumbnail ID for a given asset.
 
   Args:
-    params: Parameters identical to those for the vizOptions for getMapId
-        with the following additions:
-      width - (number) Width of the thumbnail to render, in pixels.
-      height - (number) Height of the thumbnail to render, in pixels.
-      region - (E,S,W,N or GeoJSON) Geospatial region of the image
-          to render (or all).
-      pixel_bb - (X,Y,WIDTH,HEIGHT) Exact pixel region of the image
-          to render (or all).
-      format - (string) Either 'png' (default) or 'jpg'.
+    params: Parameters identical to getMapId, plus:
+        size - (a number or pair of numbers in format WIDTHxHEIGHT) Maximum
+          dimensions of the thumbnail to render, in pixels. If only one number
+          is passed, it is used as the maximum, and the other dimension is
+          computed by proportional scaling.
+        region - (E,S,W,N or GeoJSON) Geospatial region of the image
+          to render. By default, the whole image.
+        format - (string) Either 'png' (default) or 'jpg'.
 
   Returns:
     A thumbnail ID.
@@ -170,7 +220,22 @@ def getThumbId(params):
   request = params.copy()
   request['getid'] = '1'
   request['json_format'] = 'v2'
+  if 'size' in request and isinstance(request['size'], (list, tuple)):
+    request['size'] = 'x'.join(map(str, request['size']))
   return send_('/thumb', request)
+
+
+def makeThumbUrl(thumbId):
+  """Create a thumbnail URL from the given thumbid and token.
+
+  Args:
+    thumbId: An object containing a thumbnail thumbid and token.
+
+  Returns:
+    A URL from which the thumbnail can be obtained.
+  """
+  return '%s/api/thumb?thumbid=%s&token=%s' % (
+      _tile_base_url, thumbId['thumbid'], thumbId['token'])
 
 
 def getDownloadId(params):
@@ -206,6 +271,8 @@ def getDownloadId(params):
     A dict containing a docid and token.
   """
   params['json_format'] = 'v2'
+  if 'bands' in params and not isinstance(params['bands'], basestring):
+    params['bands'] = json.dumps(params['bands'])
   return send_('/download', params)
 
 
@@ -218,8 +285,8 @@ def makeDownloadUrl(downloadId):
   Returns:
     A URL from which the download can be obtained.
   """
-  return '%s/download?docid=%s&token=%s' % (
-      _api_base_url, downloadId['docid'], downloadId['token'])
+  return '%s/api/download?docid=%s&token=%s' % (
+      _tile_base_url, downloadId['docid'], downloadId['token'])
 
 
 def getAlgorithms():
@@ -257,6 +324,75 @@ def createAsset(value, opt_path=None):
   return send_('/create', args)
 
 
+def newTaskId(count=1):
+  """Generate an ID for a long-running task.
+
+  Args:
+    count: Optional count of IDs to generate, one by default.
+
+  Returns:
+    A list containing generated ID strings.
+  """
+  args = {'count': count}
+  return send_('/newtaskid', args)
+
+
+def getTaskStatus(taskId):
+  """Retrieve status of one or more long-running tasks.
+
+  Args:
+    taskId: ID of the task or a list of multiple IDs.
+
+  Returns:
+    List containing one object for each queried task, in the same order as
+    the input array, each object containing the following values:
+      id (string) ID of the task.
+      state (string) State of the task, one of READY, RUNNING, COMPLETED,
+        FAILED, CANCELLED; or UNKNOWN if the task with the specified ID
+        doesn't exist.
+     error_message (string) For a FAILED task, a description of the error.
+  """
+  if isinstance(taskId, basestring):
+    taskId = [taskId]
+  args = {'q': ','.join(taskId)}
+  return send_('/taskstatus', args, 'GET')
+
+
+def prepareValue(taskId, params):
+  """Create processing task which computes a value.
+
+  Args:
+    taskId: ID for the task (obtained using newTaskId).
+    params: The object that describes the value to be evaluated, with the
+      following field:
+        json (string) A JSON object to be evaluated.
+
+  Returns:
+    A dict with optional notes about the created task.
+  """
+  args = params.copy()
+  args['tid'] = taskId
+  return send_('/prepare', args)
+
+
+def startProcessing(taskId, params):
+  """Create processing task that exports or pre-renders an image.
+
+  Args:
+    taskId: ID for the task (obtained using newTaskId).
+    params: The object that describes the processing task; only fields
+      that are common for all processing types are documented below.
+        type (string) Either 'export_image' or 'render'.
+        imageJson (string) JSON description of the image.
+
+  Returns:
+    A dict with optional notes about the created task.
+  """
+  args = params.copy()
+  args['id'] = taskId
+  return send_('/processingrequest', args)
+
+
 def send_(path, params, opt_method='POST', opt_raw=False):
   """Send an API call.
 
@@ -273,14 +409,16 @@ def send_(path, params, opt_method='POST', opt_raw=False):
   Raises:
     EEException: For malformed requests or errors from the server.
   """
+  # Make sure we never perform API calls before initialization.
+  initialize()
+
   url = _api_base_url + path
-  deadline = float(params.pop('deadline', DEFAULT_DEADLINE))
   payload = urllib.urlencode(params)
-  http = httplib2.Http(timeout=deadline)
+  http = httplib2.Http(timeout=int(_deadline_ms / 1000) or None)
 
   headers = {}
-  if CREDENTIALS:
-    http = CREDENTIALS.authorize(http)
+  if _credentials:
+    http = _credentials.authorize(http)
 
   if opt_method == 'GET':
     url = url + '?' + payload

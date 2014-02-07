@@ -3,11 +3,12 @@
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
+# pylint: disable=g-bad-name
 
 import datetime
 import json
 import math
+import md5
 import numbers
 
 import ee_exception
@@ -34,9 +35,11 @@ class Serializer(object):
     # A list of shared subtrees as [name, value] pairs.
     self._scope = []
 
-    # A lookup table from object ID as retrieved by id() to subtree
-    # names as stored in self._scope.
+    # A lookup table from object hash to subtree names as stored in self._scope
     self._encoded = {}
+
+    # A lookup table from object ID as retrieved by id() to md5 hash values.
+    self._hashcache = {}
 
   def _encode(self, obj):
     """Encodes a top level object in the EE API v2 (DAG) format.
@@ -64,6 +67,7 @@ class Serializer(object):
       # Clear state in case of future encoding.
       self._scope = []
       self._encoded = {}
+      self._hashcache = {}
     return value
 
   def _encodeValue(self, obj):
@@ -78,9 +82,9 @@ class Serializer(object):
       An encoded object.
     """
     obj_id = id(obj)
-    encoded = self._encoded.get(obj_id, None)
-
-    if encoded is not None:
+    hashval = self._hashcache.get(obj_id)
+    encoded = self._encoded.get(hashval, None)
+    if self._is_compound and encoded:
       # Already encoded objects are encoded as ValueRefs and returned directly.
       return {
           'type': 'ValueRef',
@@ -92,7 +96,8 @@ class Serializer(object):
     elif isinstance(obj, datetime.datetime):
       # Dates are encoded as typed UTC microseconds since the Unix epoch.
       # They are returned directly and not saved in the scope either.
-      microseconds = (obj - _EPOCH_DATETIME).total_seconds() * 1e6
+      td = (obj - _EPOCH_DATETIME)
+      microseconds = td.microseconds + (td.seconds + td.days * 24 * 3600) * 1e6
       return {
           'type': 'Date',
           'value': math.floor(microseconds)
@@ -111,16 +116,21 @@ class Serializer(object):
       # Dictionary are encoded recursively and wrapped in a type specifier.
       result = {
           'type': 'Dictionary',
-          'value': {key: self._encodeValue(value) for key, value in obj.items()}
+          'value': dict([(key, self._encodeValue(value))
+                         for key, value in obj.iteritems()])
       }
     else:
       raise ee_exception.EEException('Can\'t encode object: %s' % obj)
 
     if self._is_compound:
       # Save the new object and return a ValueRef.
-      name = str(len(self._scope))
-      self._scope.append((name, result))
-      self._encoded[obj_id] = name
+      hashval = md5.new(json.dumps(result)).digest()
+      self._hashcache[obj_id] = hashval
+      name = self._encoded.get(hashval, None)
+      if not name:
+        name = str(len(self._scope))
+        self._scope.append((name, result))
+        self._encoded[hashval] = name
       return {
           'type': 'ValueRef',
           'value': name
@@ -129,18 +139,31 @@ class Serializer(object):
       return result
 
 
+def encode(obj):
+  """Serialize an object to a JSON-compatible structure for API calls.
+
+  Args:
+    obj: The object to serialize.
+
+  Returns:
+    A JSON-compatible structure representing the input.
+  """
+  serializer = Serializer(True)
+  return serializer._encode(obj)  # pylint: disable=protected-access
+
+
 def toJSON(obj, opt_pretty=False):
   """Serialize an object to a JSON string appropriate for API calls.
 
   Args:
-    obj: The object to Serialize.
+    obj: The object to serialize.
     opt_pretty: True to pretty-print the object.
 
   Returns:
     A JSON string representing the input.
   """
   serializer = Serializer(not opt_pretty)
-  encoded = serializer._encode(obj)  # pylint: disable-msg=protected-access
+  encoded = serializer._encode(obj)  # pylint: disable=protected-access
   return json.dumps(encoded, indent=2 if opt_pretty else None)
 
 

@@ -6,7 +6,7 @@ See: https://sites.google.com/site/earthengineapidocs for more details.
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
+# pylint: disable=g-bad-name
 
 import apifunction
 import computedobject
@@ -22,17 +22,18 @@ class Image(computedobject.ComputedObject):
 
   _initialized = False
 
-  def __init__(self, args=None):
+  def __init__(self, args=None, version=None):
     """Constructs an Earth Engine image.
 
     Args:
       args: This constructor accepts a variety of arguments:
-          1) A string - an EarthEngine asset id,
-          2) A number - creates a constant image,
-          3) An array - creates an image out of each element of the array and
-             combines them into a single image,
-          4) An ee.Image - returns the argument,
-          5) Nothing - results in an empty transparent image.
+          - A string - an EarthEngine asset id,
+          - A string and a number - an EarthEngine asset id and version,
+          - A number - creates a constant image,
+          - An array - creates an image out of each element of the array and
+            combines them into a single image,
+          - An ee.Image - returns the argument,
+          - Nothing - results in an empty transparent image.
 
     Raises:
       EEException: if passed something other than the above.
@@ -40,10 +41,22 @@ class Image(computedobject.ComputedObject):
 
     self.initialize()
 
+    if version is not None:
+      if ee_types.isString(args) and ee_types.isNumber(version):
+        # An ID and version.
+        super(Image, self).__init__(
+            apifunction.ApiFunction.lookup('Image.load'),
+            {'id': args, 'version': version})
+      else:
+        raise ee_exception.EEException(
+            'Unrecognized argument type to convert to an Image: %s' %
+            (args, version))
+      return
+
     if ee_types.isNumber(args):
       # A constant image.
       super(Image, self).__init__(
-          apifunction.ApiFunction.lookup('Constant'), {'value': args})
+          apifunction.ApiFunction.lookup('Image.constant'), {'value': args})
     elif ee_types.isString(args):
       # An ID.
       super(Image, self).__init__(
@@ -137,6 +150,26 @@ class Image(computedobject.ComputedObject):
     request = params or {}
     request['image'] = self.serialize()
     return data.makeDownloadUrl(data.getDownloadId(request))
+
+  def getThumbUrl(self, params=None):
+    """Get a thumbnail URL for this image.
+
+    Args:
+      params: Parameters identical to getMapId, plus:
+          size - (a number or pair of numbers in format WIDTHxHEIGHT) Maximum
+            dimensions of the thumbnail to render, in pixels. If only one number
+            is passed, it is used as the maximum, and the other dimension is
+            computed by proportional scaling.
+          region - (E,S,W,N or GeoJSON) Geospatial region of the image
+            to render. By default, the whole image.
+          format - (string) Either 'png' (default) or 'jpg'.
+
+    Returns:
+      A URL to download a thumbnail the specified image.
+    """
+    request = params or {}
+    request['image'] = self.serialize()
+    return data.makeThumbUrl(data.getThumbId(request))
 
   ###################################################
   # Static methods.
@@ -283,6 +316,27 @@ class Image(computedobject.ComputedObject):
     except ee_exception.EEException:
       pass  # Not an ee.Geometry or GeoJSON. Just pass it along.
     return apifunction.ApiFunction.call_('Image.clip', self, clip_geometry)
+
+  def set(self, properties):
+    """Overrides one or more metadata properties of an Image.
+
+    Args:
+      properties: The property values to override.
+
+    Returns:
+      The image with the specified properties overridden.
+    """
+    if not isinstance(properties, (dict, computedobject.ComputedObject)):
+      raise ee_exception.EEException('Image.set() requires a dictionary.')
+
+    # Try to be smart about interpreting the argument.
+    if (isinstance(properties, dict) and
+        properties.keys() == ['properties'] and
+        isinstance(properties['properties'], dict)):
+      # Looks like a call with keyword parameters. Extract them.
+      properties = properties['properties']
+    # Manually cast the result to an image.
+    return Image(apifunction.ApiFunction.call_('Image.set', self, properties))
 
   @staticmethod
   def name():

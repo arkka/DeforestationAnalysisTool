@@ -3,7 +3,7 @@
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
+# pylint: disable=g-bad-name
 
 import apifunction
 import collection
@@ -71,9 +71,9 @@ class FeatureCollection(collection.Collection):
   def initialize(cls):
     """Imports API functions to this class."""
     if not cls._initialized:
+      super(FeatureCollection, cls).initialize()
       apifunction.ApiFunction.importApi(
           cls, 'FeatureCollection', 'FeatureCollection')
-      collection.Collection.createAutoMapFunctions(feature.Feature)
       cls._initialized = True
 
   @classmethod
@@ -90,23 +90,18 @@ class FeatureCollection(collection.Collection):
           'color', containing a hex RGB color string is allowed.
 
     Returns:
-      An object containing a mapid string, an access token, plus a DrawVector
-      image wrapping this collection.
+      An object containing a mapid string, an access token, plus a
+      Collection.draw image wrapping this collection.
     """
-    painted = apifunction.ApiFunction.apply_('DrawVector', {
+    painted = apifunction.ApiFunction.apply_('Collection.draw', {
         'collection': self,
         'color': (vis_params or {}).get('color', '000000')
     })
     return painted.getMapId({})
 
-  def map(self,
-          algorithm,
-          opt_dynamicArgs=None,
-          opt_constantArgs=None,
-          opt_destination=None):
+  def map(self, algorithm):
     """Maps an algorithm over a collection. See ee.Collection.mapInternal()."""
-    return self.mapInternal(feature.Feature, algorithm,
-                            opt_dynamicArgs, opt_constantArgs, opt_destination)
+    return self.mapInternal(feature.Feature, algorithm)
 
   @staticmethod
   def name():

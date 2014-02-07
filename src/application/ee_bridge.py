@@ -39,7 +39,7 @@ MAX_NDFI = 200
 INVALID_NDFI = MAX_NDFI + 1
 
 # The length of a "long" time period in milliseconds.
-LONG_SPAN_SIZE_MS = 1000 * 60 * 60 * 24 * 30 * 6
+LONG_SPAN_SIZE_MS = 1000 * 60 * 60 * 24 * 30 * 9
 
 # MODIS projection specification.
 MODIS_CRS = 'SR-ORG:6974'
@@ -257,7 +257,7 @@ class NDFI(object):
 
     def baseline(self, asset_id):
         """Returns a Map ID for the given classification asset, masked to only show CLS_BASELINE areas."""
-        classification = ee.Image(asset_id).select('classification')
+        classification = ee.Image(asset_id).select(0)
         return _get_raw_mapid(
             classification.mask(classification.eq(CLS_BASELINE)).getMapId())
 
@@ -419,8 +419,8 @@ class NDFI(object):
         masked = diff.mask(diff.mask().And(diff.lte(MAX_NDFI)))
 
         # Aggregate each cell.
-        count_reducer = ee.call('Reducer.count')
-        sum_reducer = ee.call('Reducer.sum')
+        count_reducer = ee.Reducer.count()
+        sum_reducer = ee.Reducer.sum()
         results = []
         for y in range(rows):
             for x in range(cols):
@@ -708,7 +708,7 @@ class NDFI(object):
         krig_filter = ee.Filter.eq('Compounddate', int(date))
         params = ee.FeatureCollection(KRIGING_PARAMS_TABLE).filter(krig_filter)
         mosaic = self._make_mosaic(period, long_span)
-        return ee.call('SAD.KrigeModis', mosaic, params)
+        return ee.Algorithms.SAD.KrigeModis(mosaic, params)
 
     def _make_mosaic(self, period, long_span=False):
         """Returns a mosaic of MODIS images for a given period.
@@ -931,7 +931,9 @@ def _get_area_histogram(image, polygons, classes):
 
     result = []
     for name, value in stats.iteritems():
-        row = {'name': name, 'total': sum(value['values'].values())}
+        # The values are sorted to get a deterministic order, as this affects
+        # the result due to floating point errors.
+        row = {'name': name, 'total': sum(sorted(value['values'].values()))}
         for class_number in classes:
           class_label = str(class_number)
           row[class_label] = value['values'].get(class_label, 0)
@@ -1040,9 +1042,9 @@ def _get_landsat_toa(start_time, end_time, version=-1):
       An ee.ImageCollection of Landsat TOA images.
     """
     # Load a specific version of an image collection.
-    collection = ee.call('ImageCollection.load', 'L7_L1T', version)
+    collection = ee.ImageCollection.load('L7_L1T', version)
     collection = collection.filterDate(start_time, end_time)
-    return collection.map(lambda img: ee.call('LandsatTOA', img))
+    return collection.map(lambda img: ee.Algorithms.LandsatTOA(img))
 
 
 def _get_modis_tile(horizontal, vertical):

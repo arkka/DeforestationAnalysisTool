@@ -9,21 +9,26 @@ import collections
 import json
 import numbers
 
+import apifunction
+import computedobject
 import ee_exception
-import encodable
 import serializer
 
 
-class Geometry(encodable.Encodable):
+class Geometry(computedobject.ComputedObject):
   """An Earth Engine geometry."""
+
+  _initialized = False
 
   def __init__(self, geo_json, opt_proj=None, opt_geodesic=None):
     """Creates a geometry.
 
     Args:
-      geo_json: The GeoJSON object describing the geometry. Supports
+      geo_json: The GeoJSON object describing the geometry or a
+          computed object to be reinterpred as a Geometry. Supports
           CRS specifications as per the GeoJSON spec, but only allows named
-          (rather than "linked" CRSs).
+          (rather than "linked" CRSs). If this includes a 'geodesic' field,
+          and opt_geodesic is not specified, it will be used as opt_geodesic.
       opt_proj: An optional projection specification, either as a CRS ID
           code or as a WKT string. If specified, overrides any CRS found
           in the geo_json parameter. If unspecified and the geo_json does not
@@ -37,11 +42,28 @@ class Geometry(encodable.Encodable):
     Raises:
       EEException: if the given geometry isn't valid.
     """
+    self.initialize()
+
+    computed = (isinstance(geo_json, computedobject.ComputedObject) and
+                geo_json.func is not None)
+    options = opt_proj or opt_geodesic
+    if computed:
+      if options:
+        raise ee_exception.EEException(
+            'Setting the CRS or geodesic on a computed Geometry is not '
+            'suported.  Use Geometry.transform().')
+      else:
+        super(Geometry, self).__init__(geo_json.func, geo_json.args)
+        return
+
+    # Below here we're working with a GeoJSON literal.
     if isinstance(geo_json, Geometry):
       geo_json = geo_json.encode()
 
     if not Geometry._isValidGeometry(geo_json):
       raise ee_exception.EEException('Invalid GeoJSON geometry.')
+
+    super(Geometry, self).__init__(None, None)
 
     # The type of the geometry.
     self._type = geo_json['type']
@@ -54,20 +76,52 @@ class Geometry(encodable.Encodable):
     self._geometries = geo_json.get('geometries')
 
     # The projection code (WKT or identifier) of the geometry.
-    self._proj = opt_proj
+    if opt_proj:
+      self._proj = opt_proj
+    elif 'crs' in geo_json:
+      if (isinstance(geo_json.get('crs'), dict) and
+          geo_json['crs'].get('type') == 'name' and
+          isinstance(geo_json['crs'].get('properties'), dict) and
+          isinstance(geo_json['crs']['properties'].get('name'), basestring)):
+        self._proj = geo_json['crs']['properties']['name']
+      else:
+        raise ee_exception.EEException('Invalid CRS declaration in GeoJSON: ' +
+                                       json.dumps(geo_json['crs']))
+    else:
+      self._proj = None
 
     # Whether the geometry has spherical geodesic edges.
     self._geodesic = opt_geodesic
+    if opt_geodesic is None and 'geodesic' in geo_json:
+      self._geodesic = bool(geo_json['geodesic'])
+
+  @classmethod
+  def initialize(cls):
+    """Imports API functions to this class."""
+    if not cls._initialized:
+      apifunction.ApiFunction.importApi(cls, 'Geometry', 'Geometry')
+      cls._initialized = True
+
+  @classmethod
+  def reset(cls):
+    """Removes imported API functions from this class."""
+    apifunction.ApiFunction.clearApi(cls)
+    cls._initialized = False
 
   def __eq__(self, other):
     # pylint: disable-msg=protected-access
-    return (type(self) == type(other) and
-            self._type == other._type and
-            self._coordinates == other._coordinates and
-            self._geometries == other._geometries and
-            self._proj == other._proj and
-            self._geodesic == other._geodesic)
-    # pylint: enable-msg=protected-access
+    if self.func:
+      return (type(self) == type(other) and
+              self.func == other.func and
+              self.args == other.args)
+    else:
+      return (type(self) == type(other) and
+              self._type == other._type and
+              self._coordinates == other._coordinates and
+              self._geometries == other._geometries and
+              self._proj == other._proj and
+              self._geodesic == other._geodesic)
+      # pylint: enable-msg=protected-access
 
   def __ne__(self, other):
     return not self.__eq__(other)
@@ -119,10 +173,10 @@ class Geometry(encodable.Encodable):
     """Construct a rectangular polygon from the given corner points.
 
     Args:
-      xlo: The lower left x coordinate.
-      ylo: The lower left y coordinate.
-      xhi: The upper right x coordinate.
-      yhi: The upepr right y coordinate.
+      xlo: The minimum X coordinate (e.g. longitude).
+      ylo: The minimum Y coordinate (e.g. latitude).
+      xhi: The maximum X coordinate (e.g. longitude).
+      yhi: The maximum Y coordinate (e.g. latitude).
 
     Returns:
       A dictionary representing a GeoJSON Polygon.
@@ -240,6 +294,9 @@ class Geometry(encodable.Encodable):
 
   def encode(self, opt_encoder=None):  # pylint: disable-msg=unused-argument
     """Returns a GeoJSON-compatible representation of the geometry."""
+    if self.func:
+      return super(Geometry, self).encode(opt_encoder)
+
     result = {'type': self._type}
     if self._type == 'GeometryCollection':
       result['geometries'] = self._geometries
@@ -261,14 +318,28 @@ class Geometry(encodable.Encodable):
 
   def toGeoJSON(self):
     """Returns a GeoJSON representation of the geometry."""
-    result = self.encode()
-    if 'geodesic' in result:
-      del result['geodesic']  # Not part of the GeoJSON spec.
-    return result
+    if self.func:
+      raise ee_exception.EEException(
+          'Can\'t convert a computed geometry to GeoJSON. '
+          'Use getInfo() instead.')
+
+    return self.encode()
 
   def toGeoJSONString(self):
     """Returns a GeoJSON string representation of the geometry."""
+    if self.func:
+      raise ee_exception.EEException(
+          'Can\'t convert a computed geometry to GeoJSON. '
+          'Use getInfo() instead.')
     return json.dumps(self.toGeoJSON())
+
+  def type(self):
+    """Returns the GeoJSON type of the geometry."""
+    if self.func:
+      raise ee_exception.EEException(
+          'Can\'t get the type of a computed geometry to GeoJSON. '
+          'Use getInfo() instead.')
+    return self._type
 
   def serialize(self):
     """Returns the serialized representation of this object."""
@@ -409,3 +480,7 @@ class Geometry(encodable.Encodable):
       raise ee_exception.EEException('Invalid geometry.')
 
     return geometry
+
+  @staticmethod
+  def name():
+    return 'Geometry'

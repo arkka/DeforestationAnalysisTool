@@ -3,7 +3,7 @@
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
+# pylint: disable=g-bad-name
 
 import apifunction
 import computedobject
@@ -23,7 +23,8 @@ class Feature(computedobject.ComputedObject):
     optional dictionary of properties:
       1) An ee.Geometry.
       2) A GeoJSON Geometry.
-      3) A computed object - reinterpreted as a geometry if properties
+      3) A GeoJSON Feature.
+      4) A computed object - reinterpreted as a geometry if properties
          are specified, and as a feature if they aren't.
 
     Args:
@@ -45,21 +46,20 @@ class Feature(computedobject.ComputedObject):
     self.initialize()
 
     feature_constructor = apifunction.ApiFunction.lookup('Feature')
-    if isinstance(geom, computedobject.ComputedObject):
-      if opt_properties:
-        # A computed geometry.
-        super(Feature, self).__init__(feature_constructor, {
-            'geometry': geom,
-            'metadata': opt_properties
-        })
-      else:
-        # A custom object to reinterpret as a Feature.
-        super(Feature, self).__init__(geom.func, geom.args)
-    elif geom is None or isinstance(geom, geometry.Geometry):
+    if geom is None or isinstance(geom, geometry.Geometry):
       # A geometry object.
       super(Feature, self).__init__(feature_constructor, {
           'geometry': geom,
           'metadata': opt_properties or None
+      })
+    elif isinstance(geom, computedobject.ComputedObject):
+      # A custom object to reinterpret as a Feature.
+      super(Feature, self).__init__(geom.func, geom.args)
+    elif isinstance(geom, dict) and geom.get('type') == 'Feature':
+      # Try to convert a GeoJSON Feature.
+      super(Feature, self).__init__(feature_constructor, {
+          'geometry': geometry.Geometry(geom.get('geometry', None)),
+          'metadata': geom.get('properties', None)
       })
     else:
       # Try to convert the geometry arg to a Geometry, in the hopes of it
@@ -90,8 +90,9 @@ class Feature(computedobject.ComputedObject):
           'color', containing a hex RGB color string is allowed.
 
     Returns:
-      An object containing a mapid string, an access token, plus a DrawVector
-      image wrapping a FeatureCollection containing this feature.
+      An object containing a mapid string, an access token, plus a
+      Collection.draw image wrapping a FeatureCollection containing
+      this feature.
     """
     # Create a collection containing this one feature and render it.
     collection = apifunction.ApiFunction.call_('Collection', [self])
@@ -136,6 +137,29 @@ class Feature(computedobject.ComputedObject):
   def MultiPolygon(*args, **kwargs):
     """Create a GeoJSON MultiPolygon."""
     return geometry.Geometry.MultiPolygon(*args, **kwargs)
+
+  def set(self, properties):
+    """Overrides one or more metadata properties of a Feature.
+
+    Args:
+      properties: The property values to override.
+
+    Returns:
+      The feature with the specified properties overridden.
+    """
+    # NOTE: This is virtually identical to Image.set() and relies on its test.
+    if not isinstance(properties, (dict, computedobject.ComputedObject)):
+      raise ee_exception.EEException('Feature.set() requires a dictionary.')
+
+    # Try to be smart about interpreting the argument.
+    if (isinstance(properties, dict) and
+        properties.keys() == ['properties'] and
+        isinstance(properties['properties'], dict)):
+      # Looks like a call with keyword parameters. Extract them.
+      properties = properties['properties']
+    # Manually cast the result to an feature.
+    return Feature(
+        apifunction.ApiFunction.call_('Feature.set', self, properties))
 
   @staticmethod
   def name():

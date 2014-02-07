@@ -10,10 +10,10 @@ Example usage:
 
 
 # Using lowercase function naming to match the JavaScript names.
-# pylint: disable-msg=g-bad-name
+# pylint: disable=g-bad-name
 
 # Our custom instance/static decorator is not recognized by lint.
-# pylint: disable-msg=no-self-argument, no-method-argument, g-doc-args
+# pylint: disable=no-self-argument, no-method-argument, g-doc-args
 
 import datetime
 import functools
@@ -39,7 +39,7 @@ class _FilterAutoCreator(object):
 
     @functools.wraps(self.func)
     def PassThroughAppend(*args, **kwargs):
-      return filter_instance._append(  # pylint: disable-msg=protected-access
+      return filter_instance._append(  # pylint: disable=protected-access
           self.func(*args, **kwargs))
 
     return PassThroughAppend
@@ -141,7 +141,7 @@ class Filter(computedobject.ComputedObject):
     if new_filter is not None:
       prev = list(self._filter)
       if isinstance(new_filter, Filter):
-        prev.extend(new_filter._filter)  # pylint: disable-msg=protected-access
+        prev.extend(new_filter._filter)  # pylint: disable=protected-access
       elif isinstance(new_filter, list):
         prev.extend(new_filter)
       else:
@@ -170,6 +170,8 @@ class Filter(computedobject.ComputedObject):
     Returns:
       The new filter.
     """
+    operator = operator.lower()
+
     # Check for negated filters.
     negated = False
     if operator.startswith('not_'):
@@ -277,6 +279,36 @@ class Filter(computedobject.ComputedObject):
     return apifunction.ApiFunction.apply_('Filter.dateRangeContains', {
         'leftValue': date_range,
         'rightField': 'system:time_start'
+    })
+
+  @_FilterAutoCreator
+  def inList(opt_leftField=None,
+             opt_rightValue=None,
+             opt_rightField=None,
+             opt_leftValue=None):
+    """Filter on metadata contained in a list.
+
+    Args:
+      opt_leftField: A selector for the left operand.
+          Should not be specified if leftValue is specified.
+      opt_rightValue: The value of the right operand.
+          Should not be specified if rightField is specified.
+      opt_rightField: A selector for the right operand.
+          Should not be specified if rightValue is specified.
+      opt_leftValue: The value of the left operand.
+          Should not be specified if leftField is specified.
+
+    Returns:
+      The constructed filter.
+    """
+    # Implement this in terms of listContains, with the arguments switched.
+    # In listContains the list is on the left side, while in inList it's on
+    # the right.
+    return apifunction.ApiFunction.apply_('Filter.listContains', {
+        'leftField': opt_rightField,
+        'rightValue': opt_leftValue,
+        'rightField': opt_leftField,
+        'leftValue': opt_rightValue
     })
 
   @_FilterAutoCreator
